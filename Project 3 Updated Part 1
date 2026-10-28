@@ -1,0 +1,261 @@
+%% Part 1, Step 1: Generate and verify white Gaussian input
+clear; close all; clc;
+
+rng(1337);
+
+% Generate N independent, zero-mean, unit-variance Gaussian samples
+N = 50000;
+samples = randn(N, 1);
+
+fprintf('White Noise:\n');
+sample_mean = mean(samples);
+sample_variance = var(samples);
+fprintf('Sample mean: %.4f\nSample variance: %.4f\n', ...
+        sample_mean, sample_variance);
+fprintf('Theoretical mean: %.4f\n', 0);
+fprintf('Theoretical variance: %.4f\n', 1);
+
+% Estimate input autocorrelation for lags -20 through 20
+maxLag = 20;
+lags = -maxLag:maxLag; % 41 values -20 to 20, including sneaky 0.
+R_samples = zeros(size(lags)); % Array for autocorrelation estimates
+
+for k = 1:numel(lags) % Loop through all lag values
+    m = abs(lags(k)); 
+    R_samples(k) = mean(samples(1:N-m) .* samples(1+m:N)); % Estimate autocorrel at lag m 
+end
+
+R_theory = double(lags == 0);
+
+figure;
+
+subplot(2,1,1);
+stem(lags, R_samples, 'filled');
+title('Sample Autocorrelation of Input');
+xlabel('Lag m');
+ylabel('R_X[m]');
+grid on;
+
+subplot(2,1,2);
+stem(lags, R_theory, 'r', 'filled');
+title('Theoretical Autocorrelation of Input');
+xlabel('Lag m');
+ylabel('R_X[m]');
+grid on;
+
+%% Part 1, Step 2: FIR filter and output PDF
+% Equation 1: y[n] = x[n] - x[n-1] + x[n-2]
+y_fir = filter([1 -1 1], 1, samples);
+
+% Estimate the PDF of the FIR output
+figure;
+
+histogram(y_fir, 80, 'Normalization', 'pdf');
+title('PDF of FIR Output');
+xlabel('Output value');
+ylabel('Estimated probability density');
+grid on;
+hold on;
+
+x = linspace(min(y_fir), max(y_fir), 500);
+pdf_theory = 1/sqrt(2*pi*3) * exp(-x.^2/(2*3));
+plot(x, pdf_theory, 'r', 'LineWidth', 2);
+legend('Experimental PDF', 'Theoretical PDF');
+
+fprintf('\nFIR Output:\n');
+fprintf('Sample mean: %.4f\n', mean(y_fir));
+fprintf('Sample variance: %.4f\n', var(y_fir));
+fprintf('Theoretical mean: %.4f\n', 0);
+fprintf('Theoretical variance: %.4f\n', 3);
+
+%% Part 1, Step 6: Repeat the output PDF for the recursive filter
+y_recursive = filter(1, [1 -0.95], samples);
+
+% Theoretical variance
+var_theory = 1 / (1 - 0.95^2);
+
+% Generate theoretical Gaussian PDF
+x = linspace(min(y_recursive), max(y_recursive), 500);
+
+pdf_theory = (1 / sqrt(2*pi*var_theory)) * ...
+    exp(-x.^2 / (2*var_theory));
+
+% Plot experimental and theoretical PDFs
+figure;
+histogram(y_recursive, 80, 'Normalization', 'pdf');
+hold on;
+
+plot(x, pdf_theory, 'r', 'LineWidth', 2);
+title('PDF of Recursive Filter Output');
+xlabel('Output Value');
+ylabel('Probability Density');
+legend('Experimental PDF', 'Theoretical PDF');
+grid on;
+
+fprintf('\nRecursive Output:\n');
+fprintf('Sample mean: %.4f\n', mean(y_recursive));
+fprintf('Sample variance: %.4f\n', var(y_recursive));
+fprintf('Theoretical mean: %.4f\n', 0);
+fprintf('Theoretical variance: %.4f\n', 1/(1-0.95^2));
+
+%% Part 1, Steps 2 and 6: Output scatter plots
+plotScatterLags(y_fir, 'FIR');
+plotScatterLags(y_recursive, 'Recursive');
+
+
+%% Part 1, Steps 3 and 6: Output autocorrelation
+% Estimate output autocorrelation using 20 independent 50,0000 samples
+% Each run gives one estimate at each lag then averages the 20 estimates
+numRealizations = 20;
+R_fir_samples = zeros(size(lags));
+R_recursive_samples = zeros(size(lags));
+
+for trial = 1:numRealizations
+    trial_samples = randn(N, 1); % New independent input for this run
+    trial_fir = filter([1 -1 1], 1, trial_samples);
+    trial_recursive = filter(1, [1 -0.95], trial_samples);
+
+    for k = 1:numel(lags)
+        m = abs(lags(k));
+        R_fir_samples(k) = R_fir_samples(k) + ...
+            mean(trial_fir(1:N-m) .* trial_fir(1+m:N));
+        R_recursive_samples(k) = R_recursive_samples(k) + ...
+            mean(trial_recursive(1:N-m) .* trial_recursive(1+m:N));
+    end
+end
+R_fir_samples = R_fir_samples / numRealizations;
+R_recursive_samples = R_recursive_samples / numRealizations;
+
+% Theoretical FIR autocorrelation: h = [1 -1 1]
+% Lag 0: 1^2 + (-1)^2 + 1^2 = 3
+% Lag 1: 1*(-1) + (-1)*1 = -2
+% Lag 2: 1*1 = 1; all larger lags have no overlapping terms
+R_fir_theoritcal = zeros(size(lags));
+R_fir_theoritcal(lags == 0) = 3;
+R_fir_theoritcal(abs(lags) == 1) = -2;
+R_fir_theoritcal(abs(lags) == 2) = 1;
+
+% Theoretical recursive autocorrelation for y[n] = x[n] + 0.95*y[n-1]
+% Lag 0 has variance 1/(1 - 0.95^2); each lag decays by a factor of 0.95
+R_recursive_theoritcal = 0.95 .^ abs(lags) / (1 - 0.95^2);
+
+% Compare sample and theoretical FIR autocorrelation
+figure;
+subplot(2,1,1);
+stem(lags, R_fir_samples, 'filled');
+title('Sample Autocorrelation of FIR Output');
+xlabel('Lag m');
+ylabel('R_Y[m]');
+grid on;
+
+subplot(2,1,2);
+stem(lags, R_fir_theoritcal, 'r', 'filled');
+title('Theoretical Autocorrelation of FIR Output');
+xlabel('Lag m');
+ylabel('R_Y[m]');
+grid on;
+
+% Compare sample and theoretical recursive autocorrelation
+figure;
+subplot(2,1,1);
+stem(lags, R_recursive_samples, 'filled');
+title('Sample Autocorrelation of Recursive Output');
+xlabel('Lag m');
+ylabel('R_Y[m]');
+grid on;
+
+subplot(2,1,2);
+stem(lags, R_recursive_theoritcal, 'r', 'filled');
+title('Theoretical Autocorrelation of Recursive Output');
+xlabel('Lag m');
+ylabel('R_Y[m]');
+grid on;
+
+%% Part 1, Steps 4 and 6: Estimate and compare output PSDs
+% Calculate one periodogram from each full 50000-sample output, then
+% average the periodograms over the 20 independent runs.
+omega = (-N/2:N/2-1) * (2*pi/N);
+P_fir_periodogram = zeros(N, 1);
+P_recursive_periodogram = zeros(N, 1);
+
+% The recursive autocorrelation decays slowly, so use more than 20 lags
+% for its DTFT. The same lag range is used for the FIR output.
+maxPsdLag = 150;
+R_fir_psd = zeros(1, maxPsdLag+1);
+R_recursive_psd = zeros(1, maxPsdLag+1);
+
+for trial = 1:numRealizations
+    trial_samples = randn(N, 1); % Fresh independent input for this run
+    trial_fir = filter([1 -1 1], 1, trial_samples);
+    trial_recursive = filter(1, [1 -0.95], trial_samples);
+
+    % Periodogram = |FFT of the full output|^2 / N
+    P_fir_periodogram = P_fir_periodogram + ...
+        abs(fft(trial_fir)).^2 / N;
+    P_recursive_periodogram = P_recursive_periodogram + ...
+        abs(fft(trial_recursive)).^2 / N;
+
+    % Estimate R_Y[m] for m = 0,...,150 in this run
+    for m = 0:maxPsdLag
+        R_fir_psd(m+1) = R_fir_psd(m+1) + ...
+            mean(trial_fir(1:N-m) .* trial_fir(1+m:N));
+        R_recursive_psd(m+1) = R_recursive_psd(m+1) + ...
+            mean(trial_recursive(1:N-m) .* trial_recursive(1+m:N));
+    end
+end
+P_fir_periodogram = P_fir_periodogram / numRealizations;
+P_recursive_periodogram = P_recursive_periodogram / numRealizations;
+R_fir_psd = R_fir_psd / numRealizations;
+R_recursive_psd = R_recursive_psd / numRealizations;
+
+% DTFT of the sample autocorrelation. Since R[-m] = R[m], its DTFT is
+% R[0] + 2*sum(R[m]*cos(m*omega)) over the positive lags.
+P_fir_from_acf = R_fir_psd(1) * ones(size(omega));
+P_recursive_from_acf = R_recursive_psd(1) * ones(size(omega));
+for m = 1:maxPsdLag
+    P_fir_from_acf = P_fir_from_acf + 2*R_fir_psd(m+1)*cos(m*omega);
+    P_recursive_from_acf = P_recursive_from_acf + ...
+        2*R_recursive_psd(m+1)*cos(m*omega);
+end
+
+% Theoretical PSD: S_Y(omega) = |H(omega)|^2*S_X(omega), with S_X = 1
+P_fir_theory = (2*cos(omega) - 1).^2;
+P_recursive_theory = 1 ./ (1 + 0.95^2 - 2*0.95*cos(omega));
+
+figure;
+plot(omega, fftshift(P_fir_periodogram)); hold on;
+plot(omega, P_fir_from_acf, 'r', 'LineWidth', 1.5);
+plot(omega, P_fir_theory, 'k--', 'LineWidth', 1.5);
+title('FIR Output PSD');
+xlabel('Angular frequency (rad/sample)'); ylabel('PSD');
+legend('Averaged periodogram', 'DTFT of sample R_Y', 'Theory');
+xlim([-pi pi]); grid on;
+
+figure;
+plot(omega, fftshift(P_recursive_periodogram)); hold on;
+plot(omega, P_recursive_from_acf, 'r', 'LineWidth', 1.5);
+plot(omega, P_recursive_theory, 'k--', 'LineWidth', 1.5);
+title('Recursive Output PSD');
+xlabel('Angular frequency (rad/sample)'); ylabel('PSD');
+legend('Averaged periodogram', 'DTFT of sample R_Y', 'Theory');
+xlim([-0.5 0.5]); grid on;
+
+
+
+
+
+%% Helper function for lag scatter plots
+function plotScatterLags(y, filterName)
+    N = numel(y);
+    i = 1:N-10;
+
+    figure;
+    for m = 1:4
+        subplot(2,2,m);
+        plot(y(i), y(i+m), '.', 'MarkerSize', 2);
+        title(sprintf('%s Output: Lag %d', filterName, m));
+        xlabel('Y[i]');
+        ylabel(sprintf('Y[i+%d]', m));
+        grid on;
+    end
+end
