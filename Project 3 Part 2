@@ -78,7 +78,6 @@ end
 
 
 % function to generate x[n] and y[n]
-
 function [x, y] = genX_Y(L, M)
     % white gaussian noise
     w = randn(L, 1);
