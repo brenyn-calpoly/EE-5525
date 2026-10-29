@@ -1,0 +1,91 @@
+% Part 2: moving average filter
+clear; 
+close all; 
+clc;
+rng(6767);
+
+% Steps 1 and 2: generate and plot X[n] and Y[n]
+
+% sequence of length 30
+L = 30;
+% 2 input, output sequences for 2nd and 10th order
+for M = [2 10]
+    % calls function
+    [x, y] = genX_Y(L, M);
+    
+    figure;
+    stem(0:L-1, x, 'filled');
+    hold on;
+    stem(0:L-1, y, 'filled');
+
+    title(sprintf('Input and Output (M = %d)', M));
+    xlabel('Sample Index [n]');
+    ylabel('Amplitude');
+    legend('X[n]', 'Y[n]');
+    grid on;
+
+end
+
+
+% Step 3: estimate autocorrelation and PSD
+% parameters from part 1
+N = 50000;
+maxLag = 20;
+% multiple realizations allow for averaging
+numRealizations = 20;
+
+
+for M = [2 10]
+    R_sum = zeros(2*maxLag+1, 1);
+    PSD_sum = zeros(N, 1);
+
+    % runs each realization
+    for k = 1:numRealizations
+        % generates 50,000 samples for x and y
+        [x, y] = genX_Y(N, M);
+
+        % estimate autocorrelation
+        [R_y, lags] = xcorr(y, maxLag, 'biased');
+        R_sum = R_sum + R_y;
+
+        % estimate PSD using FFT
+        PSD_sum = PSD_sum + abs(fft(y)).^2 / N;
+    end
+
+    % averages the realizations to get a better representation of R and S
+    R_y = R_sum / numRealizations;
+    PSD = fftshift(PSD_sum / numRealizations);
+
+    % plot autocorrelation
+    figure;
+    stem(lags, R_y, 'filled');
+
+    title(sprintf('Output Autocorrelation (M = %d)', M));
+    xlabel('Lag m');
+    ylabel('R_Y[m]');
+    grid on;
+
+    % plot PSD
+    figure;
+    omega = linspace(-pi, pi, N);
+    plot(omega, PSD);
+    title(sprintf('Output PSD (M = %d)', M));
+    xlabel('Angular Frequency (rad/sample)');
+    ylabel('PSD');
+    xlim([-2 2]);
+    grid on;
+end
+
+
+% function to generate x[n] and y[n]
+
+function [x, y] = genX_Y(L, M)
+    % white gaussian noise
+    w = randn(L, 1);
+    % shaping filter to generate x[n] from gaussian wn
+    x = filter(sqrt(2)*[1 1], 1, w);
+    % moving average filter
+    h = ones(1, M) / M;
+    % output singal y[n]
+    y = filter(h, 1, x);
+end
