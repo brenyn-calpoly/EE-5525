@@ -31,9 +31,9 @@ end
 % parameters from part 1
 N = 50000;
 maxLag = 20;
+lags = -maxLag:maxLag;
 % multiple realizations allow for averaging
 numRealizations = 20;
-
 
 for M = [2 10]
     R_sum = zeros(2*maxLag+1, 1);
@@ -45,7 +45,13 @@ for M = [2 10]
         [x, y] = genX_Y(N, M);
 
         % estimate autocorrelation
-        [R_y, lags] = xcorr(y, maxLag, 'biased');
+        R_y = zeros(numel(lags), 1);
+
+        for j = 1:numel(lags)
+            m = abs(lags(j));
+            R_y(j) = mean(y(1:N-m) .* y(1+m:N));
+        end
+
         R_sum = R_sum + R_y;
 
         % estimate PSD using FFT
@@ -78,6 +84,7 @@ end
 
 
 % function to generate x[n] and y[n]
+
 function [x, y] = genX_Y(L, M)
     % white gaussian noise
     w = randn(L, 1);
